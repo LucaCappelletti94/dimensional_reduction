@@ -1,0 +1,2 @@
+# dimensional_reduction
+Understanding dimensional reduction
