@@ -1,4 +1,4 @@
 pub struct BasicDecomposition {
-    target_dimension: usize,
-    verbose: bool
+    pub(crate) model_name: String,
+    pub(crate) verbose: bool
 }
