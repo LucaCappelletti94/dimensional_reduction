@@ -1,0 +1,9 @@
+[package]
+name = "dimensional_reduction"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+num-traits = {git="https://github.com/zommiommy/num-traits.git", features=["atomic_from_mut"]}
