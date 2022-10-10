@@ -5,3 +5,4 @@ pub mod sigmoid_decomposition;
 pub mod basic_iterative_decomposition;
 pub mod basic_decomposition;
 pub mod utils;
+pub mod numpy_decomposition;

@@ -4,7 +4,7 @@ use std::{
     ops::{Add, Mul},
 };
 
-use crate::traits::GenericFeature;
+use num_traits::Float;
 
 pub fn dot<I1, I2, E>(left: I1, right: I2) -> E
 where
@@ -17,7 +17,7 @@ where
 
 pub fn sigmoid<F>(x: F) -> F
 where
-    F: GenericFeature,
+    F: Float,
 {
     F::one() / (F::one() + (-x).exp())
 }

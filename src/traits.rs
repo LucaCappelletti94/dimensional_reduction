@@ -4,21 +4,19 @@ use crate::{
 };
 use indicatif::{ProgressBar, ProgressStyle};
 use indicatif::{ProgressBarIter, ProgressIterator};
-use num_traits::{Float, One, Zero, AsPrimitive};
+use num_traits::{AsPrimitive, Float, One, Zero};
 use std::{
     iter::Sum,
-    ops::{Add, Div, Mul, Neg, Sub, SubAssign, MulAssign},
+    ops::{Add, Div, Mul, MulAssign, Sub, SubAssign},
 };
 
 pub trait GenericFeature:
-    Float
-    + Mul<Self, Output = Self>
+    Mul<Self, Output = Self>
     + Div<Self, Output = Self>
     + Add<Self, Output = Self>
     + Sub<Self, Output = Self>
     + SubAssign<Self>
     + MulAssign<Self>
-    + Neg<Output = Self>
     + Sum<Self>
     + One
     + Zero
@@ -26,6 +24,23 @@ pub trait GenericFeature:
     + Sync
     + Send
     + 'static
+{
+}
+
+impl<T> GenericFeature for T where
+    T: Mul<Self, Output = Self>
+        + Div<Self, Output = Self>
+        + Add<Self, Output = Self>
+        + Sub<Self, Output = Self>
+        + SubAssign<Self>
+        + MulAssign<Self>
+        + Sum<Self>
+        + One
+        + Zero
+        + Copy
+        + Sync
+        + Send
+        + 'static
 {
 }
 
@@ -39,7 +54,7 @@ pub trait DimensionalReduction {
     ) -> Result<(), String>
     where
         Original: num_traits::AsPrimitive<Target> + GenericFeature,
-        Target: GenericFeature,
+        Target: Float + GenericFeature,
         f32: AsPrimitive<Target>;
 }
 

@@ -3,7 +3,7 @@ use crate::{
     traits::{DimensionalReduction, GenericFeature, IterativeDecomposition},
     utils::{dot, sigmoid, DataRaceAware},
 };
-use num_traits::AsPrimitive;
+use num_traits::{AsPrimitive, Float};
 use rayon::prelude::*;
 
 pub struct SigmoidDecomposition {
@@ -26,7 +26,7 @@ impl DimensionalReduction for SigmoidDecomposition {
     ) -> Result<(), String>
     where
         Original: AsPrimitive<Target> + GenericFeature,
-        Target: GenericFeature,
+        Target: Float + GenericFeature,
         f32: AsPrimitive<Target>,
     {
         if target.len() % target_dimension != 0 {
