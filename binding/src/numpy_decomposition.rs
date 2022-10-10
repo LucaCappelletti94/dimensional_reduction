@@ -1,20 +1,17 @@
-use crate::traits::DimensionalReduction;
+use dimensional_reduction::traits::DimensionalReduction;
 use crate::*;
 use half::f16;
 use numpy::PyArray2;
+use crate::traits::*;
 use pyo3::exceptions::PyValueError;
 use pyo3::{FromPyObject, IntoPy, Py, PyAny, PyResult};
 
-pub trait DimensionalReductionBinding {
-    fn get_basic_dimensionality_reduction<T: DimensionalReduction>(&self) -> &T;
-}
-
-pub trait NumpyDecomposition {
-    fn fit_transform<T: DimensionalReduction>(
+pub trait NumpyDecomposition<T> where T: DimensionalReduction {
+    fn fit_transform_binding(
         &self,
         matrix: Py<PyAny>,
-        number_of_dimensions: usize,
-        dtype: &str,
+        number_of_dimensions: Option<usize>,
+        dtype: Option<&str>,
     ) -> PyResult<Py<PyAny>>;
 }
 
@@ -27,7 +24,7 @@ macro_rules! impl_numpy_decompositions {
         /// matrix: np.ndarray
         ///     2D Matrix containing the feaures.
         ///
-        fn fit_transform<T: DimensionalReduction>(&self, matrix: Py<PyAny>, number_of_dimensions: Option<usize>, dtype: Option<&str>) -> PyResult<Py<PyAny>> {
+        fn fit_transform_binding(&self, matrix: Py<PyAny>, number_of_dimensions: Option<usize>, dtype: Option<&str>) -> PyResult<Py<PyAny>> {
             let gil = pyo3::Python::acquire_gil();
             let matrix = matrix.as_ref(gil.python());
             $(
@@ -52,7 +49,7 @@ macro_rules! impl_numpy_decompositions {
                             let target = unsafe { PyArray2::new(gil.python(), [number_of_samples, number_of_dimensions], false) };
                             let target_ref: &mut [f16] = unsafe { target.as_slice_mut().unwrap() };
 
-                            pe!(self.get_basic_dimensionality_reduction::<T>().fit_transform(
+                            pe!(self.get_basic_dimensionality_reduction().fit_transform(
                                 target_ref,
                                 number_of_dimensions,
                                 matrix_ref,
@@ -65,7 +62,7 @@ macro_rules! impl_numpy_decompositions {
                             let target = unsafe { PyArray2::new(gil.python(), [number_of_samples, number_of_dimensions], false) };
                             let target_ref: &mut [f32] = unsafe { target.as_slice_mut().unwrap() };
 
-                            pe!(self.get_basic_dimensionality_reduction::<T>().fit_transform(
+                            pe!(self.get_basic_dimensionality_reduction().fit_transform(
                                 target_ref,
                                 number_of_dimensions,
                                 matrix_ref,
@@ -78,7 +75,7 @@ macro_rules! impl_numpy_decompositions {
                             let target = unsafe { PyArray2::new(gil.python(), [number_of_samples, number_of_dimensions], false) };
                             let target_ref: &mut [f64] = unsafe { target.as_slice_mut().unwrap() };
 
-                            pe!(self.get_basic_dimensionality_reduction::<T>().fit_transform(
+                            pe!(self.get_basic_dimensionality_reduction().fit_transform(
                                 target_ref,
                                 number_of_dimensions,
                                 matrix_ref,
@@ -108,9 +105,10 @@ macro_rules! impl_numpy_decompositions {
     };
 }
 
-impl<M> NumpyDecomposition for M
+impl<M, T> NumpyDecomposition<T> for M
 where
-    M: DimensionalReductionBinding,
+    M: DimensionalReductionBinding<T>,
+    T: DimensionalReduction
 {
     impl_numpy_decompositions! {
         u8, u16, u32, u64, i8, i16, i32, i64, f16, f32, f64

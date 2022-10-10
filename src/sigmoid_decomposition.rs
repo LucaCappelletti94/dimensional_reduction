@@ -1,15 +1,21 @@
+use crate::traits::*;
 use crate::{
     basic_iterative_decomposition::BasicIterativeDecomposition,
-    traits::{DimensionalReduction, GenericFeature, IterativeDecomposition, Decomposition},
-    utils::{dot, sigmoid, DataRaceAware},
+    traits::{Decomposition, DimensionalReduction, GenericFeature, IterativeDecomposition},
+    utils::{dot, normal_dot, sigmoid, DataRaceAware},
 };
 use num_traits::{AsPrimitive, Float};
-use crate::traits::RandomUniformInitialization;
 use rayon::prelude::*;
 
-
+#[derive(Clone)]
 pub struct SigmoidDecomposition {
     decomposition: BasicIterativeDecomposition,
+}
+
+impl From<BasicIterativeDecomposition> for SigmoidDecomposition {
+    fn from(decomposition: BasicIterativeDecomposition) -> Self {
+        Self { decomposition }
+    }
 }
 
 impl IterativeDecomposition for SigmoidDecomposition {
@@ -29,6 +35,7 @@ impl DimensionalReduction for SigmoidDecomposition {
     where
         Original: AsPrimitive<Target> + GenericFeature,
         Target: Float + GenericFeature,
+        usize: AsPrimitive<Original>,
         f32: AsPrimitive<Target>,
     {
         if target.len() % target_dimension != 0 {
@@ -44,6 +51,9 @@ impl DimensionalReduction for SigmoidDecomposition {
         }
 
         target.random_init(self.get_random_state());
+
+        let mean = original.matrix_mean(original_dimension)?;
+        let std = original.matrix_std(original_dimension)?;
 
         // We wrap the features object in an unsafe cell so
         // it may be shared among threads.
@@ -97,9 +107,11 @@ impl DimensionalReduction for SigmoidDecomposition {
                                         left_target_sample.iter().copied(),
                                         right_target_sample.iter().copied(),
                                     );
-                                    let original_dot: Target = dot(
-                                        left_original_sample.iter().copied(),
-                                        right_original_sample.iter().copied(),
+                                    let original_dot: Target = normal_dot(
+                                        left_original_sample,
+                                        right_original_sample,
+                                        &mean,
+                                        &std,
                                     )
                                     .as_();
                                     let mut variation = sigmoid(target_dot) - sigmoid(original_dot);
@@ -108,8 +120,9 @@ impl DimensionalReduction for SigmoidDecomposition {
                                         .iter_mut()
                                         .zip(right_target_sample.iter_mut())
                                         .for_each(|(left, right)| {
+                                            let left_tmp = *left;
                                             *left -= *right * variation;
-                                            *right -= *left * variation;
+                                            *right -= left_tmp * variation;
                                         });
                                     Ok(())
                                 })

@@ -3,6 +3,7 @@
 pub mod macros;
 pub mod numpy_decomposition;
 pub mod sigmoid_decomposition;
+pub mod traits;
 
 use pyo3::{pymodule, types::PyModule, PyResult, Python};
 pub use sigmoid_decomposition::SigmoidDecomposition;

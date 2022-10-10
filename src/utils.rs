@@ -1,7 +1,7 @@
 use std::{
     cell::UnsafeCell,
     iter::Sum,
-    ops::{Add, Mul},
+    ops::{Add, Div, Mul, Sub},
 };
 
 use num_traits::Float;
@@ -15,13 +15,34 @@ where
     left.zip(right).map(|(l, r)| l * r).sum::<E>()
 }
 
+pub fn normal_dot<E>(left: &[E], right: &[E], mean: &[E], std: &[E]) -> E
+where
+    E: Mul<E, Output = E>
+        + Div<E, Output = E>
+        + Sub<E, Output = E>
+        + Add<E, Output = E>
+        + Sum<E>
+        + Copy,
+{
+    dot(
+        left.iter()
+            .copied()
+            .zip(mean.iter().copied().zip(std.iter().copied()))
+            .map(|(l, (m, s))| (l - m) / s),
+        right
+            .iter()
+            .copied()
+            .zip(mean.iter().copied().zip(std.iter().copied()))
+            .map(|(l, (m, s))| (l - m) / s),
+    )
+}
+
 pub fn sigmoid<F>(x: F) -> F
 where
     F: Float,
 {
     F::one() / (F::one() + (-x).exp())
 }
-
 
 pub struct DataRaceAware<T>
 where

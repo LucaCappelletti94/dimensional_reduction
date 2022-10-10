@@ -1,4 +1,12 @@
+use crate::*;
+use crate::traits::*;
+use crate::numpy_decomposition::NumpyDecomposition;
+use dimensional_reduction::traits::DimensionalReduction;
+use dimensional_reduction::basic_iterative_decomposition::BasicIterativeDecomposition;
 use dimensional_reduction::SigmoidDecomposition as SigmoidDecompositionRust;
+use pyo3::types::PyDict;
+use pyo3::*;
+use pyo3::exceptions::PyValueError;
 
 impl FromPyDict for SigmoidDecompositionRust {
     fn from_pydict(py_kwargs: Option<&types::PyDict>) -> PyResult<Self>
@@ -8,15 +16,14 @@ impl FromPyDict for SigmoidDecompositionRust {
         let py = pyo3::Python::acquire_gil();
         let kwargs = normalize_kwargs!(py_kwargs, py.python());
 
-        Ok(Self {
-            decomposition: pe!(BasicIterativeDecomposition::new(
+        Ok(Self::from(pe!(BasicIterativeDecomposition::new(
                 extract_value_rust_result!(kwargs, "iterations", usize),
                 extract_value_rust_result!(kwargs, "learning_rate", f32),
                 "Sigmoid Decomposition",
                 extract_value_rust_result!(kwargs, "random_state", u64),
                 extract_value_rust_result!(kwargs, "verbose", bool),
             ))?,
-        })
+        ))
     }
 }
 
@@ -26,6 +33,12 @@ impl FromPyDict for SigmoidDecompositionRust {
 #[pyo3(text_signature = "(*, iterations, learning_rate, random_state, verbose)")]
 pub struct SigmoidDecomposition {
     inner: SigmoidDecompositionRust,
+}
+
+impl DimensionalReductionBinding<SigmoidDecompositionRust> for SigmoidDecomposition {
+    fn get_basic_dimensionality_reduction(&self) -> &SigmoidDecompositionRust {
+        &self.inner
+    }
 }
 
 #[pymethods]
@@ -40,7 +53,7 @@ impl SigmoidDecomposition {
     ///     The random state to reproduce the model initialization and training. By default, 42.
     pub fn new(py_kwargs: Option<&PyDict>) -> PyResult<Self> {
         Ok(Self {
-            inner: Self::from_pydict(py_kwargs)?,
+            inner: SigmoidDecompositionRust::from_pydict(py_kwargs)?,
         })
     }
 
@@ -51,6 +64,6 @@ impl SigmoidDecomposition {
         number_of_dimensions: Option<usize>,
         dtype: Option<&str>,
     ) -> PyResult<Py<PyAny>> {
-        self.inner.fit_transform(matrix, number_of_dimensions, dtype)
+        self.fit_transform_binding(matrix, number_of_dimensions, dtype)
     }
 }
