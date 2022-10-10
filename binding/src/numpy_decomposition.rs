@@ -27,7 +27,7 @@ macro_rules! impl_numpy_decompositions {
         /// matrix: np.ndarray
         ///     2D Matrix containing the feaures.
         ///
-        fn fit_transform<T: DimensionalReduction>(&self, matrix: Py<PyAny>, number_of_dimensions: usize, dtype: &str) -> PyResult<Py<PyAny>> {
+        fn fit_transform<T: DimensionalReduction>(&self, matrix: Py<PyAny>, number_of_dimensions: Option<usize>, dtype: Option<&str>) -> PyResult<Py<PyAny>> {
             let gil = pyo3::Python::acquire_gil();
             let matrix = matrix.as_ref(gil.python());
             $(
@@ -45,8 +45,9 @@ macro_rules! impl_numpy_decompositions {
                     let matrix_ref = unsafe { matrix.as_slice().unwrap() };
                     let number_of_samples = matrix.shape()[0];
                     let number_of_features = matrix.shape()[1];
+                    let number_of_dimensions = number_of_dimensions.unwrap_or(2);
 
-                    match dtype {
+                    match dtype.unwrap_or("f32") {
                         "f16" => {
                             let target = unsafe { PyArray2::new(gil.python(), [number_of_samples, number_of_dimensions], false) };
                             let target_ref: &mut [f16] = unsafe { target.as_slice_mut().unwrap() };

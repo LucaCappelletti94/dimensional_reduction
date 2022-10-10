@@ -6,7 +6,11 @@ pub struct BasicDecomposition {
 }
 
 impl BasicDecomposition {
-    pub fn new(model_name: &str, random_state: Option<u64>, verbose: Option<bool>) -> Result<Self, String> {
+    pub fn new(
+        model_name: &str,
+        random_state: Option<u64>,
+        verbose: Option<bool>,
+    ) -> Result<Self, String> {
         if model_name.is_empty() {
             return Err("The provided model name is empty.".to_string());
         }

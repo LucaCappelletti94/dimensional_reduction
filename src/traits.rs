@@ -2,15 +2,15 @@ use crate::{
     basic_decomposition::BasicDecomposition,
     basic_iterative_decomposition::BasicIterativeDecomposition,
 };
-use pyo3::PyResult;
-use pyo3::types::PyDict;
 use indicatif::{ProgressBar, ProgressStyle};
 use indicatif::{ProgressBarIter, ProgressIterator};
 use num_traits::{AsPrimitive, Float, One, Zero};
+use rayon::prelude::*;
 use std::{
     iter::Sum,
     ops::{Add, Div, Mul, MulAssign, Sub, SubAssign},
 };
+use vec_rand::{random_f32, splitmix64};
 
 pub trait GenericFeature:
     Mul<Self, Output = Self>
@@ -127,8 +127,32 @@ where
     }
 }
 
-pub(crate) trait FromPyDict {
-    fn from_pydict(py_kwargs: Option<&PyDict>) -> PyResult<Self>
-    where
-        Self: Sized;
+pub trait RandomUniformInitialization {
+    fn random_init(&mut self, random_state: u64);
+}
+
+impl<'a, F> RandomUniformInitialization for &'a mut [F]
+where
+    F: Send + Sync + Copy + 'static,
+    f32: AsPrimitive<F>,
+{
+    fn random_init(&mut self, random_state: u64) {
+        self.par_iter_mut().enumerate().for_each(|(i, weight)| {
+            *weight = (2.0_f32 * random_f32(splitmix64(random_state + random_state * i as u64))
+                - 1.0_f32)
+                .as_();
+        });
+    }
+}
+
+impl<F> RandomUniformInitialization for Vec<F>
+where
+    Self: AsMut<[F]>,
+    F: Send + Sync + 'static,
+    F: AsPrimitive<f32>,
+    f32: AsPrimitive<F>,
+{
+    fn random_init(&mut self, random_state: u64) {
+        self.as_mut().random_init(random_state);
+    }
 }

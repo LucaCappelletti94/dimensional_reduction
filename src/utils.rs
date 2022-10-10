@@ -22,6 +22,7 @@ where
     F::one() / (F::one() + (-x).exp())
 }
 
+
 pub struct DataRaceAware<T>
 where
     T: ?Sized,
