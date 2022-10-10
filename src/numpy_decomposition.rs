@@ -1,15 +1,9 @@
 use crate::traits::DimensionalReduction;
+use crate::*;
 use half::f16;
 use numpy::PyArray2;
 use pyo3::exceptions::PyValueError;
 use pyo3::{FromPyObject, IntoPy, Py, PyAny, PyResult};
-
-#[macro_export]
-macro_rules! pe {
-    ($value: expr) => {
-        ($value).map_err(|err| PyValueError::new_err(err))
-    };
-}
 
 pub trait DimensionalReductionBinding {
     fn get_basic_dimensionality_reduction<T: DimensionalReduction>(&self) -> &T;

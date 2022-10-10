@@ -2,6 +2,8 @@ use crate::{
     basic_decomposition::BasicDecomposition,
     basic_iterative_decomposition::BasicIterativeDecomposition,
 };
+use pyo3::PyResult;
+use pyo3::types::PyDict;
 use indicatif::{ProgressBar, ProgressStyle};
 use indicatif::{ProgressBarIter, ProgressIterator};
 use num_traits::{AsPrimitive, Float, One, Zero};
@@ -65,6 +67,10 @@ pub trait Decomposition {
         self.get_basic_decomposition().model_name.as_str()
     }
 
+    fn get_random_state(&self) -> u64 {
+        self.get_basic_decomposition().random_state
+    }
+
     fn is_verbose(&self) -> bool {
         self.get_basic_decomposition().verbose
     }
@@ -119,4 +125,10 @@ where
     fn get_basic_decomposition(&self) -> &BasicDecomposition {
         &self.get_iterative_basic_decomposition().basic_decomposition
     }
+}
+
+pub(crate) trait FromPyDict {
+    fn from_pydict(py_kwargs: Option<&PyDict>) -> PyResult<Self>
+    where
+        Self: Sized;
 }

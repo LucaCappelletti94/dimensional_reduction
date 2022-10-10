@@ -1,13 +1,56 @@
+use crate::*;
 use crate::{
     basic_iterative_decomposition::BasicIterativeDecomposition,
+    traits::FromPyDict,
     traits::{DimensionalReduction, GenericFeature, IterativeDecomposition},
     utils::{dot, sigmoid, DataRaceAware},
 };
+use pyo3::exceptions::PyValueError;
 use num_traits::{AsPrimitive, Float};
+use pyo3::{types::PyDict, *};
 use rayon::prelude::*;
 
+///
+#[pyclass]
+#[derive(Clone)]
+#[pyo3(text_signature = "(*, , random_state)")]
 pub struct SigmoidDecomposition {
     decomposition: BasicIterativeDecomposition,
+}
+
+impl FromPyDict for SigmoidDecomposition {
+    fn from_pydict(py_kwargs: Option<&types::PyDict>) -> PyResult<Self>
+    where
+        Self: Sized,
+    {
+        let py = pyo3::Python::acquire_gil();
+        let kwargs = normalize_kwargs!(py_kwargs, py.python());
+
+        Ok(Self {
+            decomposition: pe!(BasicIterativeDecomposition::new(
+                extract_value_rust_result!(kwargs, "iterations", usize),
+                extract_value_rust_result!(kwargs, "learning_rate", f32),
+                "Sigmoid Decomposition",
+                extract_value_rust_result!(kwargs, "random_state", u64),
+                extract_value_rust_result!(kwargs, "verbose", bool),
+            ))?,
+        })
+    }
+}
+
+#[pymethods]
+impl SigmoidDecomposition {
+    #[new]
+    #[args(py_kwargs = "**")]
+    /// Return a new instance of the Sigmoid Decomposition model.
+    ///
+    /// Parameters
+    /// ------------------------
+    /// random_state: int = 42
+    ///     The random state to reproduce the model initialization and training. By default, 42.
+    pub fn new(py_kwargs: Option<&PyDict>) -> PyResult<Self> {
+        Self::from_pydict(py_kwargs)
+    }
 }
 
 impl IterativeDecomposition for SigmoidDecomposition {
