@@ -15,7 +15,7 @@ where
     left.zip(right).map(|(l, r)| l * r).sum::<E>()
 }
 
-pub fn normal_dot<E>(left: &[E], right: &[E], mean: &[E], std: &[E]) -> E
+pub fn normal_dot<E>(left: &[E], right: &[E], mean: &[E], variance: &[E]) -> E
 where
     E: Mul<E, Output = E>
         + Div<E, Output = E>
@@ -27,13 +27,13 @@ where
     dot(
         left.iter()
             .copied()
-            .zip(mean.iter().copied().zip(std.iter().copied()))
-            .map(|(l, (m, s))| (l - m) / s),
+            .zip(mean.iter().copied().zip(variance.iter().copied()))
+            .map(|(l, (m, v))| (l - m) / v),
         right
             .iter()
             .copied()
-            .zip(mean.iter().copied().zip(std.iter().copied()))
-            .map(|(l, (m, s))| (l - m) / s),
+            .zip(mean.iter().copied())
+            .map(|(l, m)| l - m),
     )
 }
 

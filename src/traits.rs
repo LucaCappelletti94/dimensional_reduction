@@ -4,8 +4,9 @@ use crate::{
 };
 use indicatif::{ProgressBar, ProgressStyle};
 use indicatif::{ProgressBarIter, ProgressIterator};
-use num_traits::{AsPrimitive, Float, One, Zero};
+use num_traits::{AsPrimitive, Bounded, Float, One, Zero};
 use rayon::prelude::*;
+use std::fmt::Debug;
 use std::{
     iter::Sum,
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign},
@@ -17,6 +18,10 @@ pub trait GenericFeature:
     + Div<Self, Output = Self>
     + Add<Self, Output = Self>
     + Sub<Self, Output = Self>
+    + PartialOrd
+    + Bounded
+    + AsPrimitive<usize>
+    + Debug
     + SubAssign<Self>
     + AddAssign<Self>
     + MulAssign<Self>
@@ -41,6 +46,10 @@ impl<T> GenericFeature for T where
         + MulAssign<Self>
         + DivAssign<Self>
         + Sum<Self>
+        + PartialOrd
+        + Debug
+        + Bounded
+        + AsPrimitive<usize>
         + One
         + Zero
         + Copy
@@ -59,9 +68,9 @@ pub trait DimensionalReduction {
         original_dimension: usize,
     ) -> Result<(), String>
     where
-        Original: num_traits::AsPrimitive<Target> + GenericFeature,
+        Original: num_traits::AsPrimitive<Target> + GenericFeature + Float,
         Target: Float + GenericFeature,
-        usize: AsPrimitive<Original>,
+        usize: AsPrimitive<Original> + AsPrimitive<Target>,
         f32: AsPrimitive<Target>;
 }
 
@@ -196,19 +205,76 @@ where
     }
 }
 
-pub trait MatrixStandardDeviation<F> {
-    fn matrix_std(&self, dimensionality: usize) -> Result<Vec<F>, String>;
+pub trait MatrixMinMax<F> {
+    fn matrix_min_max(&self, dimensionality: usize) -> Result<(Vec<F>, Vec<F>), String>;
 }
 
-impl<'a, F> MatrixStandardDeviation<F> for &[F]
+impl<'a, F> MatrixMinMax<F> for &[F]
+where
+    F: GenericFeature,
+{
+    fn matrix_min_max(&self, dimensionality: usize) -> Result<(Vec<F>, Vec<F>), String> {
+        if self.is_empty() {
+            return Err("The provided object is empty".to_string());
+        }
+
+        if self.len() % dimensionality != 0 {
+            return Err(format!(
+                concat!(
+                    "The provided dimensionality {} is not compatible ",
+                    "with the length of this object {}."
+                ),
+                dimensionality,
+                self.len(),
+            ));
+        }
+
+        Ok(self
+            .par_chunks(dimensionality)
+            .map(|slice| (slice.to_vec(), slice.to_vec()))
+            .reduce(
+                || {
+                    (
+                        vec![F::max_value(); dimensionality],
+                        vec![F::min_value(); dimensionality],
+                    )
+                },
+                |(mut left_min, mut left_max), (right_min, right_max)| {
+                    left_min
+                        .iter_mut()
+                        .zip(right_min.into_iter())
+                        .for_each(|(l, r)| {
+                            if *l > r {
+                                *l = r;
+                            }
+                        });
+                    left_max
+                        .iter_mut()
+                        .zip(right_max.into_iter())
+                        .for_each(|(l, r)| {
+                            if *l < r {
+                                *l = r;
+                            }
+                        });
+                    (left_min, left_max)
+                },
+            ))
+    }
+}
+
+pub trait MatrixVariance<F> {
+    fn matrix_var(&self, dimensionality: usize) -> Result<Vec<F>, String>;
+}
+
+impl<'a, F> MatrixVariance<F> for &[F]
 where
     F: GenericFeature,
     usize: AsPrimitive<F>,
 {
-    fn matrix_std(&self, dimensionality: usize) -> Result<Vec<F>, String> {
+    fn matrix_var(&self, dimensionality: usize) -> Result<Vec<F>, String> {
         let matrix_mean = self.matrix_mean(dimensionality)?;
 
-        let mut unnormalized_std = self
+        let mut unnormalized_variance = self
             .par_chunks(dimensionality)
             .map(|slice| {
                 let mut vec = slice.to_vec();
@@ -216,7 +282,7 @@ where
                     .zip(matrix_mean.iter().copied())
                     .for_each(|(v, m)| {
                         let delta = *v - m;
-                        *v = delta* delta;
+                        *v = delta * delta;
                     });
                 vec
             })
@@ -232,11 +298,31 @@ where
 
         let number_of_samples: F = (self.len() / dimensionality).as_();
 
-        unnormalized_std.iter_mut().for_each(|v| {
+        unnormalized_variance.iter_mut().for_each(|v| {
             *v /= number_of_samples;
         });
 
-        Ok(unnormalized_std)
+        Ok(unnormalized_variance)
+    }
+}
+
+pub trait MatrixStandardDeviation<F> {
+    fn matrix_std(&self, dimensionality: usize) -> Result<Vec<F>, String>;
+}
+
+impl<'a, F> MatrixStandardDeviation<F> for &[F]
+where
+    F: GenericFeature + Float,
+    usize: AsPrimitive<F>,
+{
+    fn matrix_std(&self, dimensionality: usize) -> Result<Vec<F>, String> {
+        let mut variance = self.matrix_var(dimensionality)?;
+
+        variance.iter_mut().for_each(|v| {
+            *v = (*v).sqrt();
+        });
+
+        Ok(variance)
     }
 }
 

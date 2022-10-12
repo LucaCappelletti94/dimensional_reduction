@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-num-traits = {git="https://github.com/zommiommy/num-traits.git", features=["atomic_from_mut"]}
+num-traits = {git="https://github.com/LucaCappelletti94/num-traits.git", features=["atomic_from_mut"]}
 indicatif = {version="0.17.0", features = ["rayon"]}
 rayon = "1.1"
 half = {git = "https://github.com/LucaCappelletti94/half-rs.git", features = ["use-intrinsics", "num-traits"]}

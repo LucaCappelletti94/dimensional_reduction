@@ -35,7 +35,7 @@ impl DimensionalReduction for SigmoidDecomposition {
     where
         Original: AsPrimitive<Target> + GenericFeature,
         Target: Float + GenericFeature,
-        usize: AsPrimitive<Original>,
+        usize: AsPrimitive<Original> + AsPrimitive<Target>,
         f32: AsPrimitive<Target>,
     {
         if target.len() % target_dimension != 0 {
@@ -53,7 +53,7 @@ impl DimensionalReduction for SigmoidDecomposition {
         target.random_init(self.get_random_state());
 
         let mean = original.matrix_mean(original_dimension)?;
-        let std = original.matrix_std(original_dimension)?;
+        let variance = original.matrix_var(original_dimension)?;
 
         // We wrap the features object in an unsafe cell so
         // it may be shared among threads.
@@ -111,7 +111,7 @@ impl DimensionalReduction for SigmoidDecomposition {
                                         left_original_sample,
                                         right_original_sample,
                                         &mean,
-                                        &std,
+                                        &variance,
                                     )
                                     .as_();
                                     let mut variation = sigmoid(target_dot) - sigmoid(original_dot);

@@ -1,6 +1,5 @@
 use dimensional_reduction::traits::DimensionalReduction;
 use crate::*;
-use half::f16;
 use numpy::PyArray2;
 use crate::traits::*;
 use pyo3::exceptions::PyValueError;
@@ -45,19 +44,19 @@ macro_rules! impl_numpy_decompositions {
                     let number_of_dimensions = number_of_dimensions.unwrap_or(2);
 
                     match dtype.unwrap_or("f32") {
-                        "f16" => {
-                            let target = unsafe { PyArray2::new(gil.python(), [number_of_samples, number_of_dimensions], false) };
-                            let target_ref: &mut [f16] = unsafe { target.as_slice_mut().unwrap() };
+                        // "f16" => {
+                        //     let target = unsafe { PyArray2::new(gil.python(), [number_of_samples, number_of_dimensions], false) };
+                        //     let target_ref: &mut [f16] = unsafe { target.as_slice_mut().unwrap() };
 
-                            pe!(self.get_basic_dimensionality_reduction().fit_transform(
-                                target_ref,
-                                number_of_dimensions,
-                                matrix_ref,
-                                number_of_features,
-                            ))?;
+                        //     pe!(self.get_basic_dimensionality_reduction().fit_transform(
+                        //         target_ref,
+                        //         number_of_dimensions,
+                        //         matrix_ref,
+                        //         number_of_features,
+                        //     ))?;
 
-                            return Ok(target.to_owned().into_py(gil.python()));
-                        },
+                        //     return Ok(target.to_owned().into_py(gil.python()));
+                        // },
                         "f32" => {
                             let target = unsafe { PyArray2::new(gil.python(), [number_of_samples, number_of_dimensions], false) };
                             let target_ref: &mut [f32] = unsafe { target.as_slice_mut().unwrap() };
@@ -111,6 +110,7 @@ where
     T: DimensionalReduction
 {
     impl_numpy_decompositions! {
-        u8, u16, u32, u64, i8, i16, i32, i64, f16, f32, f64
+        //u8, u16, u32, u64, i8, i16, i32, i64,
+        f32, f64
     }
 }
