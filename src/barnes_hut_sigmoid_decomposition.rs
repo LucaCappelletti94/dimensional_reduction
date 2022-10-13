@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::traits::*;
 use crate::{
@@ -6,7 +6,7 @@ use crate::{
     traits::{Decomposition, DimensionalReduction, GenericFeature, IterativeDecomposition},
     utils::{dot, normal_dot, sigmoid, DataRaceAware},
 };
-use num_traits::{AsPrimitive, Float, IntoAtomic, Zero};
+use num_traits::{AsPrimitive, Float, Zero};
 use rayon::prelude::*;
 
 use std::arch::asm;
@@ -27,16 +27,16 @@ fn pdep(x: u64, mask: u64) -> u64 {
 
 struct GradientGrid<Target, Original> {
     depth: usize,
-    grid_size: usize,
     target_dimension: usize,
     original_dimension: usize,
     gradients: DataRaceAware<Vec<Target>>,
     target_averages: DataRaceAware<Vec<Target>>,
     original_averages: DataRaceAware<Vec<Original>>,
-    populations: Vec<usize>,
+    populations: Vec<AtomicUsize>,
     reverse_index: Vec<Vec<usize>>,
-    min_values: [Target; 2],
-    max_values: [Target; 2],
+    index: Vec<usize>,
+    min_values: Vec<Target>,
+    max_values: Vec<Target>,
 }
 
 impl<Target, Original> GradientGrid<Target, Original>
@@ -53,13 +53,11 @@ where
             unimplemented!("Only target_dimension == 2!");
         }
 
-        let total_number_of_elements = 0;
-
-        let grid_size = 4_u32.pow(depth as u32) as usize;
+        let total_number_of_elements = Self::get_number_of_elements_before_layer(depth + 1);
+        let grid_size = 2_u32.pow(2 * depth as u32) as usize;
 
         Self {
             depth,
-            grid_size,
             target_dimension,
             original_dimension,
             gradients: DataRaceAware::from(vec![
@@ -68,10 +66,13 @@ where
             ]),
             target_averages: DataRaceAware::from(vec![Target::zero(); 0]),
             original_averages: DataRaceAware::from(vec![Original::zero(); 0]),
-            populations: vec![0; total_number_of_elements],
+            populations: (0..total_number_of_elements)
+                .map(|_| AtomicUsize::new(0))
+                .collect::<Vec<AtomicUsize>>(),
             reverse_index: vec![Vec::new(); grid_size],
-            min_values: [Target::zero(), Target::zero()],
-            max_values: [Target::zero(), Target::zero()],
+            index: Vec::new(),
+            min_values: Vec::new(),
+            max_values: Vec::new(),
         }
     }
 
@@ -81,8 +82,8 @@ where
             *v = Target::zero();
         });
         // Then we reset the populations.
-        self.populations.iter_mut().for_each(|v| {
-            *v = 0;
+        self.populations.iter().for_each(|v| {
+            v.store(0, Ordering::Relaxed);
         });
         // The target averages.
         (*self.target_averages.get()).iter_mut().for_each(|v| {
@@ -103,23 +104,26 @@ where
     /// updated when this function is called, the index returned
     /// may cause out-of-bounds exceptions.
     fn get_cell_coordinates_unchecked(&self, x: Target, y: Target, layer: usize) -> (usize, usize) {
-        let grid_size: Target = (2_usize.pow(layer as u32)).as_();
+        let grid_side: Target = (2_usize.pow(layer as u32)).as_();
         (
-            (grid_size * (x - self.min_values[0] / (self.max_values[0] - self.min_values[0])))
-                .round()
+            (grid_side
+                * ((x - self.min_values[0])
+                    / (Target::epsilon() + self.max_values[0] - self.min_values[0])))
+                .floor()
+                .min(grid_side - Target::one())
                 .as_(),
-            (grid_size * (y - self.min_values[1] / (self.max_values[1] - self.min_values[1])))
-                .round()
+            (grid_side
+                * ((y - self.min_values[1])
+                    / (Target::epsilon() + self.max_values[1] - self.min_values[1])))
+                .floor()
+                .min(grid_side - Target::one())
                 .as_(),
         )
     }
 
-    fn get_number_of_elements_before_layer(&self, layer: u64) -> u64 {
-        pdep(layer as u64, 6148914691236517205) - 1
-    }
-
-    fn get_number_of_elements(&self) -> u64 {
-        self.get_number_of_elements_before_layer(self.depth as u64)
+    /// Returns number of elements before layer.
+    fn get_number_of_elements_before_layer(layer: usize) -> usize {
+        pdep((1 << layer as u64) - 1, 6148914691236517205) as usize - 1
     }
 
     /// Return the ID of the cell containing the provided point.
@@ -142,7 +146,7 @@ where
     /// updated when this function is called, the index returned
     /// may cause out-of-bounds exceptions.
     fn get_absolute_cell_id_unchecked(&self, x: Target, y: Target, layer: usize) -> usize {
-        self.get_number_of_elements_before_layer(layer as u64) as usize
+        Self::get_number_of_elements_before_layer(layer)
             + self.get_relative_cell_id_unchecked(x, y, layer)
     }
 
@@ -157,18 +161,18 @@ where
             .filter(move |&sybling_id| sybling_id == id)
     }
 
-    /// Return iterator on the child indices.
-    fn iter_siblings(&self, x: Target, y: Target) -> impl Iterator<Item = usize> + '_ {
-        self.reverse_index[self.get_relative_cell_id_unchecked(x, y, self.depth)]
-            .iter()
-            .copied()
-    }
-
     /// Return all far-away leafs IDs from given point.
     fn iter_far_away_leafs(&self, x: Target, y: Target) -> impl Iterator<Item = usize> + '_ {
         (1..self.depth).flat_map(move |layer| {
             self.iter_siblings_cells(self.get_absolute_cell_id_unchecked(x, y, layer))
         })
+    }
+
+    /// Return iterator on the child indices.
+    fn iter_siblings(&self, x: Target, y: Target) -> impl Iterator<Item = usize> + '_ {
+        self.reverse_index[self.get_relative_cell_id_unchecked(x, y, self.depth)]
+            .iter()
+            .copied()
     }
 
     /// Return all far-away leafs IDs and their properties.
@@ -180,12 +184,12 @@ where
         self.iter_far_away_leafs(x, y).map(|id| unsafe {
             (
                 &(*self.target_averages.get())
-                    [id * self.target_dimension * 2..(id + 1) * self.target_dimension],
+                    [id * self.target_dimension..(id + 1) * self.target_dimension],
                 &(*self.original_averages.get())
-                    [id * self.original_dimension * 2..(id + 1) * self.original_dimension],
+                    [id * self.original_dimension..(id + 1) * self.original_dimension],
                 &mut (*self.gradients.get())
-                    [id * self.target_dimension * 2..(id + 1) * self.target_dimension],
-                self.populations[id],
+                    [id * self.target_dimension..(id + 1) * self.target_dimension],
+                self.populations[id].load(Ordering::Relaxed),
             )
         })
     }
@@ -194,21 +198,20 @@ where
     fn downpropagate_gradient(&mut self) {
         (1..self.depth).for_each(|layer| {
             // We iterate on the elements of this layer.
-            (self.get_number_of_elements_before_layer(layer as u64)
-                ..self.get_number_of_elements_before_layer(1 + layer as u64))
+            (Self::get_number_of_elements_before_layer(layer)
+                ..Self::get_number_of_elements_before_layer(1 + layer))
                 .into_par_iter()
-                .map(|cell| cell as usize)
                 .map(|cell| unsafe {
                     (
                         cell,
                         &(*self.gradients.get())
-                            [cell * self.target_dimension..(cell + 1 * self.target_dimension)],
+                            [cell * self.target_dimension..(cell + 1) * self.target_dimension],
                     )
                 })
                 .for_each(|(cell, gradient)| unsafe {
                     self.iter_child_cells(cell).for_each(|child_cell| {
                         (*self.gradients.get())[child_cell * self.target_dimension
-                            ..(child_cell + 1 * self.target_dimension)]
+                            ..(child_cell + 1) * self.target_dimension]
                             .iter_mut()
                             .zip(gradient.iter().copied())
                             .for_each(|(cg, g)| {
@@ -222,14 +225,10 @@ where
     fn apply_gradient(&self, target_features: &mut [Target]) {
         target_features
             .par_chunks_mut(self.target_dimension)
-            .for_each(|target_feature| unsafe {
-                let cell = self.get_absolute_cell_id_unchecked(
-                    target_feature[0],
-                    target_feature[1],
-                    self.depth,
-                );
+            .zip(self.index.par_iter())
+            .for_each(|(target_feature, index)| unsafe {
                 (*self.gradients.get())
-                    [cell * self.target_dimension..(cell + 1 * self.target_dimension)]
+                    [index * self.target_dimension..(index + 1) * self.target_dimension]
                     .iter()
                     .copied()
                     .zip(target_feature.iter_mut())
@@ -250,14 +249,11 @@ where
         // We update the cells minimum and maximum values,
         // which define the borders of the cell.
         let (min_values, max_values) = target_features.matrix_min_max(self.target_dimension)?;
-        self.min_values = min_values.try_into().unwrap();
-        self.max_values = max_values.try_into().unwrap();
+        self.min_values = min_values;
+        self.max_values = max_values;
 
         // Now we start to iterate on the features, and we
         // update the various populations and averages.
-
-        let shared_populations: &[AtomicUsize] = IntoAtomic::from_slice(&self.populations);
-        let number_of_composite_elements = self.get_number_of_elements() as usize - self.grid_size;
 
         let (mut target_cell_sums, mut original_cell_sums) = target_features
             .par_chunks(self.target_dimension)
@@ -268,14 +264,17 @@ where
                     target_feature[1],
                     self.depth,
                 );
-                shared_populations[cell_index].fetch_add(1, Ordering::Relaxed);
+                self.populations[cell_index].fetch_add(1, Ordering::Relaxed);
+
+                debug_assert!(cell_index < self.populations.len());
+
                 (cell_index, target_feature, original_feature)
             })
             .fold(
                 || {
                     (
-                        vec![Target::zero(); self.grid_size * self.target_dimension],
-                        vec![Original::zero(); self.grid_size * self.original_dimension],
+                        vec![Target::zero(); self.populations.len() * self.target_dimension],
+                        vec![Original::zero(); self.populations.len() * self.original_dimension],
                     )
                 },
                 |(mut partial_target_sum, mut partial_original_sum): (
@@ -288,7 +287,7 @@ where
                     &[Original],
                 )| {
                     partial_target_sum[cell_index * self.target_dimension
-                        ..(cell_index + 1 * self.target_dimension)]
+                        ..(cell_index + 1) * self.target_dimension]
                         .iter_mut()
                         .zip(target_feature.iter().copied())
                         .for_each(|(p, v)| {
@@ -296,7 +295,7 @@ where
                         });
 
                     partial_original_sum[cell_index * self.original_dimension
-                        ..(cell_index + 1 * self.original_dimension)]
+                        ..(cell_index + 1) * self.original_dimension]
                         .iter_mut()
                         .zip(original_feature.iter().copied())
                         .for_each(|(p, v)| {
@@ -309,8 +308,8 @@ where
             .reduce(
                 || {
                     (
-                        vec![Target::zero(); self.grid_size * self.target_dimension],
-                        vec![Original::zero(); self.grid_size * self.original_dimension],
+                        vec![Target::zero(); self.populations.len() * self.target_dimension],
+                        vec![Original::zero(); self.populations.len() * self.original_dimension],
                     )
                 },
                 |(mut partial_target_sum, mut partial_original_sum): (
@@ -338,14 +337,21 @@ where
 
         // Now we update the total sums by dividing by the number
         // of elements in each cell, obtaining the cell average feature.
-        self.populations[number_of_composite_elements..]
+        let number_of_elements_before_last_layer =
+            Self::get_number_of_elements_before_layer(self.depth);
+        self.populations[number_of_elements_before_last_layer..]
             .par_iter()
-            .copied()
+            .map(|population| population.load(Ordering::Relaxed))
             .zip(
-                target_cell_sums
+                target_cell_sums[number_of_elements_before_last_layer * self.target_dimension..]
                     .par_chunks_mut(self.target_dimension)
-                    .zip(original_cell_sums.par_chunks_mut(self.original_dimension)),
+                    .zip(
+                        original_cell_sums
+                            [number_of_elements_before_last_layer * self.original_dimension..]
+                            .par_chunks_mut(self.original_dimension),
+                    ),
             )
+            .filter(|(population, _)| *population > 0)
             .for_each(|(population, (target_cell_total, original_cell_total))| {
                 let population_target: Target = (population as usize).as_();
                 let population_original: Original = (population as usize).as_();
@@ -366,32 +372,31 @@ where
         // We reverse the iteration as we need to start from the penultimate layer.
         (1..self.depth).rev().for_each(|layer| {
             // We iterate on the elements of this layer.
-            (self.get_number_of_elements_before_layer(layer as u64)
-                ..self.get_number_of_elements_before_layer(1 + layer as u64))
+            (Self::get_number_of_elements_before_layer(layer)
+                ..Self::get_number_of_elements_before_layer(1 + layer))
                 .into_par_iter()
-                .map(|cell| cell as usize)
                 .map(|cell| unsafe {
                     (
                         cell,
                         &mut (*self.target_averages.get())
-                            [cell * self.target_dimension..(cell + 1 * self.target_dimension)],
+                            [cell * self.target_dimension..(cell + 1) * self.target_dimension],
                         &mut (*self.original_averages.get())
-                            [cell * self.target_dimension..(cell + 1 * self.target_dimension)],
+                            [cell * self.original_dimension..(cell + 1) * self.original_dimension],
                     )
                 })
                 .for_each(|(cell, target_sum, original_sum)| unsafe {
                     self.iter_child_cells(cell)
                         .map(|cell| {
                             (
-                                shared_populations[cell].load(Ordering::Relaxed) as usize,
+                                self.populations[cell].load(Ordering::Relaxed) as usize,
                                 &(*self.target_averages.get())[cell * self.target_dimension
-                                    ..(cell + 1 * self.target_dimension)],
+                                    ..(cell + 1) * self.target_dimension],
                                 &(*self.original_averages.get())[cell * self.original_dimension
-                                    ..(cell + 1 * self.original_dimension)],
+                                    ..(cell + 1) * self.original_dimension],
                             )
                         })
                         .for_each(|(population, target_average, original_average)| {
-                            shared_populations[cell].fetch_add(population, Ordering::Relaxed);
+                            self.populations[cell].fetch_add(population, Ordering::Relaxed);
                             target_sum
                                 .iter_mut()
                                 .zip(target_average.iter().copied())
@@ -406,7 +411,11 @@ where
                                 });
                         });
 
-                    let total = shared_populations[cell].load(Ordering::Relaxed) as usize;
+                    let total = self.populations[cell].load(Ordering::Relaxed) as usize;
+
+                    if total.is_zero() {
+                        return;
+                    }
 
                     // Since now the values in these slices are the summations of
                     // the features of the child leafs, we need to divide them by the
@@ -432,6 +441,11 @@ where
                 self.reverse_index[index].push(sample_index);
             });
 
+        self.index = target_features
+            .par_chunks(self.target_dimension)
+            .map(|feature| self.get_relative_cell_id_unchecked(feature[0], feature[1], self.depth))
+            .collect::<Vec<usize>>();
+
         Ok(())
     }
 }
@@ -446,7 +460,7 @@ impl BarnesHutSigmoidDecomposition {
     pub fn new(decomposition: BasicIterativeDecomposition, depth: Option<usize>) -> Self {
         Self {
             decomposition,
-            depth: depth.unwrap_or(4),
+            depth: depth.unwrap_or(3),
         }
     }
 }
@@ -575,14 +589,14 @@ impl DimensionalReduction for BarnesHutSigmoidDecomposition {
                                             ..((sibling_id + 1) * original_dimension)],
                                     )
                                 })
-                                .for_each(|(sibling_target_average, sibling_original_average)| {
+                                .for_each(|(sibling_target, sibling_original)| {
                                     let target_dot = dot(
                                         left_target_sample.iter().copied(),
-                                        sibling_target_average.iter().copied(),
+                                        sibling_target.iter().copied(),
                                     );
                                     let original_dot: Target = normal_dot(
                                         left_original_sample,
-                                        sibling_original_average,
+                                        sibling_original,
                                         &mean,
                                         &variance,
                                     )
@@ -591,7 +605,7 @@ impl DimensionalReduction for BarnesHutSigmoidDecomposition {
                                     variation *= learning_rate;
                                     left_target_sample
                                         .iter_mut()
-                                        .zip(sibling_target_average.iter_mut())
+                                        .zip(sibling_target.iter_mut())
                                         .for_each(|(left, right)| {
                                             let left_tmp = *left;
                                             *left -= *right * variation;

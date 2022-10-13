@@ -6,7 +6,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use indicatif::{ProgressBarIter, ProgressIterator};
 use num_traits::{AsPrimitive, Bounded, Float, One, Zero};
 use rayon::prelude::*;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::{
     iter::Sum,
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign},
@@ -22,6 +22,7 @@ pub trait GenericFeature:
     + Bounded
     + AsPrimitive<usize>
     + Debug
+    + Display
     + SubAssign<Self>
     + AddAssign<Self>
     + MulAssign<Self>
@@ -48,6 +49,7 @@ impl<T> GenericFeature for T where
         + Sum<Self>
         + PartialOrd
         + Debug
+        + Display
         + Bounded
         + AsPrimitive<usize>
         + One
@@ -231,7 +233,33 @@ where
 
         Ok(self
             .par_chunks(dimensionality)
-            .map(|slice| (slice.to_vec(), slice.to_vec()))
+            .fold(
+                || {
+                    (
+                        vec![F::max_value(); dimensionality],
+                        vec![F::min_value(); dimensionality],
+                    )
+                },
+                |(mut left_min, mut left_max), feature| {
+                    left_min
+                        .iter_mut()
+                        .zip(feature.iter().copied())
+                        .for_each(|(l, r)| {
+                            if *l > r {
+                                *l = r;
+                            }
+                        });
+                    left_max
+                        .iter_mut()
+                        .zip(feature.iter().copied())
+                        .for_each(|(l, r)| {
+                            if *l < r {
+                                *l = r;
+                            }
+                        });
+                    (left_min, left_max)
+                },
+            )
             .reduce(
                 || {
                     (

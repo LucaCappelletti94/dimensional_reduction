@@ -18,7 +18,7 @@ impl BasicIterativeDecomposition {
         Ok(Self {
             basic_decomposition: BasicDecomposition::new(model_name, random_state, verbose)?,
             iterations: iterations.unwrap_or(50),
-            learning_rate: learning_rate.unwrap_or(0.1),
+            learning_rate: learning_rate.unwrap_or(1.0),
         })
     }
 }
